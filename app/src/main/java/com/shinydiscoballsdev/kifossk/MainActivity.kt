@@ -77,37 +77,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ─── ENGINE DETECTION (Issue #2 diagnostics) ─────────────────────────────────────
-    private var cachedWebViewVersion: String? = null
-    private var cachedIsLegacyEngine: Boolean? = null
-
-    private fun probeWebViewEngine() {
-        val (versionName, isLegacy) = try {
-            val vm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WebView.getCurrentWebViewPackage()?.versionName
-            } else {
-                val pm = packageManager
-                listOf("com.google.android.webview", "com.android.chrome").firstNotNullOfOrNull { pkg ->
-                    pm.getInstalledPackages(0).find { it.packageName == pkg }?.versionName
-                }
-            }
-            val major = vm?.split('.')?.firstOrNull()?.toIntOrNull()
-            Pair(vm ?: "unknown", (major ?: 0) < 72)
-        } catch (_: Exception) {
-            Pair("unknown", true)
-        }
-
-        cachedWebViewVersion = versionName
-        cachedIsLegacyEngine = isLegacy
-        android.util.Log.i("KioskWebView", "engine=$versionName legacy=$isLegacy")
-    }
-    // ────────────────────────────────────────────────────────────────────────────────
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         // Issue #2: diagnose WebView engine for future reports
-        probeWebViewEngine()
+        WebViewCensus.refresh(this)
         // Wake screen and show over lockscreen (API 27+)
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
@@ -379,6 +353,20 @@ class MainActivity : AppCompatActivity() {
     // onReceivedError all testify through this one door.
     private fun registerRenderStrike(source: String) {
 
+        // ─── v1.1.4 ROUTING GUARD ─────────────────────────────────────
+        // Legacy engines (Chromium <= 71) and unsupported API levels (< 24):
+        // pre-1.1.0 behavior — no strikes, no breaker, no waiting page.
+        // The loop cannot form because nothing increments. Chromium's own
+        // error handling owns the display; NetworkRetryHelper still owns
+        // recovery via the loadWaitingPage legacy branch.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || WebViewCensus.isLegacy) {
+            android.util.Log.i("KioskLoad",
+                "render strike ignored (api=${Build.VERSION.SDK_INT} " +
+                        "engine=${WebViewCensus.versionName ?: "unknown"} legacy) ($source)")
+            return
+        }
+        // ───────────────────────────────────────────────────────────────
+
         consecutiveRenderFailures++
         android.util.Log.i("KioskLoad", "render strike #$consecutiveRenderFailures ($source)")
 
@@ -390,7 +378,8 @@ class MainActivity : AppCompatActivity() {
             lastWaitingPageAt = 0L   // deliberate bypass — one waiting page per event
 
             // Breaker terminal: no recovery watcher; the cooldown is the only re-attempt
-            loadWaitingPage(currentUrl, failedOverNetwork = false, recoveryArmed = false)
+            loadWaitingPage(currentUrl, failedOverNetwork = false, recoveryArmed = false,
+                terminal = true)
 
             scheduleBreakerCooldownReset()
         } else {
@@ -421,7 +410,8 @@ class MainActivity : AppCompatActivity() {
     private fun loadWaitingPage(
         targetUrl: String,
         failedOverNetwork: Boolean = false,
-        recoveryArmed: Boolean = true
+        recoveryArmed: Boolean = true,
+        terminal: Boolean = false
     ) {
         // debounce — onReceivedError, empty-body probe, and the watchdog
         // can all fire for one failure event; one fallback per event
@@ -429,10 +419,35 @@ class MainActivity : AppCompatActivity() {
         if (now - lastWaitingPageAt < 3_000L) return
         lastWaitingPageAt = now
 
+        // ─── v1.1.4 LEGACY / UNSUPPORTED ROUTE (pre-1.1.0 behavior) ──
+        // Old engines and API < 24: never show the waiting page. Load the
+        // target URL and let Chromium render its own (localized, working)
+        // error page. Recovery stays fully armed and decoupled.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || WebViewCensus.isLegacy) {
+            android.util.Log.i("KioskLoad",
+                "legacy route — Chromium native error handling (engine=" +
+                        "${WebViewCensus.versionName ?: "unknown"})")
+            if (recoveryArmed) {
+                if (failedOverNetwork) {
+                    NetworkRetryHelper.startHostRetry(targetUrl) { url: String -> webView.loadUrl(url) }
+                } else {
+                    NetworkRetryHelper.startWaitingForNetwork(this, targetUrl) { url: String -> webView.loadUrl(url) }
+                }
+            }
+            webView.loadUrl(targetUrl)
+            return
+        }
+        // ───────────────────────────────────────────────────────────────
+
         webView.setBackgroundColor(android.graphics.Color.parseColor("#1a1a2e"))
 
         val encodedUrl = android.net.Uri.encode(targetUrl)
-        webView.loadUrl("file:///android_asset/waiting.html?url=$encodedUrl")
+        val engineMajor = WebViewCensus.major ?: -1
+        webView.loadUrl(
+            "file:///android_asset/waiting.html?url=$encodedUrl" +
+                    "&engine=$engineMajor" +
+                    (if (terminal) "&state=terminal" else "")
+        )
 
         if (!recoveryArmed) return
 

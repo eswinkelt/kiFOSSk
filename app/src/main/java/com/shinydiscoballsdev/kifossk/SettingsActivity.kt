@@ -28,6 +28,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var btnSave: Button
     private lateinit var btnSetLauncher: Button
     private lateinit var textLauncherStatus: TextView
+    private lateinit var textWebViewVersion: TextView
+    private lateinit var textAppVersion: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +65,8 @@ class SettingsActivity : AppCompatActivity() {
         btnSave = findViewById(R.id.buttonSave)
         btnSetLauncher = findViewById(R.id.buttonSetLauncher)
         textLauncherStatus = findViewById(R.id.textLauncherStatus)
+        textWebViewVersion = findViewById(R.id.textWebViewVersion)
+        textAppVersion = findViewById(R.id.textAppVersion)
 
         // Load existing preferences
         editTextUrl.setText(KioskPrefs.getUrl(this))
@@ -103,6 +107,8 @@ class SettingsActivity : AppCompatActivity() {
 
         // Check launcher status on load
         updateLauncherStatus()
+
+        populateVersionInfo()
 
         // Set as Launcher button handler
         btnSetLauncher.setOnClickListener {
@@ -188,6 +194,41 @@ class SettingsActivity : AppCompatActivity() {
             textLauncherStatus.text = "⚠️ Launcher: Not Set (Won't boot to foreground)"
             textLauncherStatus.setTextColor(getColor(android.R.color.holo_red_light))
             btnSetLauncher.text = "Set as Home Launcher"
+        }
+    }
+
+    /**
+     * v1.1.4: read-only version footer. One glance at a wall-mounted
+     * device should answer "which engine is this running" and the
+     * legacy annotation explains why extended error handling is absent
+     * on that device.
+     */
+    private fun populateVersionInfo() {
+        WebViewCensus.refresh(this)
+
+        // Installed version — PackageManager, not BuildConfig (AGP 8.x
+        // disables BuildConfig generation by default; this avoids the
+        // opt-in and reports the true installed versionName)
+        val appVersion = try {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        } catch (_: Exception) {
+            null
+        }
+        textAppVersion.text = if (appVersion != null) {
+            "kiFOSSk v$appVersion"
+        } else {
+            "kiFOSSk"
+        }
+
+        val engine = WebViewCensus.versionName
+        textWebViewVersion.text = if (engine != null) {
+            "WebView: $engine"
+        } else {
+            "WebView version unavailable"
+        }
+
+        if (WebViewCensus.isLegacy) {
+            textWebViewVersion.append(" (legacy engine — extended error handling disabled)")
         }
     }
 

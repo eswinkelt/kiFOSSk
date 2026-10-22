@@ -1,18 +1,33 @@
 <!DOCTYPE html>
 <html data-kiosk="waiting">
-<head><meta charset="utf-8">
-<style>
-body{background-color:#1a1a2e;color:#6d4aff;text-align:center;
-font-family:sans-serif;padding-top:35%;margin:0;}
-h2{font-size:5vmin;}
-p{color:#888;font-size:1.8vmin;}
-</style></head>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>kiFOSSk</title>
+    <style>
+        html,body{margin:0;padding:0;}
+        body{background-color:#1a1a2e;color:#6d4aff;font-family:sans-serif;
+        min-height:100vh;display:flex;align-items:center;justify-content:center;}
+        .card{padding:1em;max-width:90vw;text-align:center;}
+        h2{font-size:28px;margin:0 0 0.4em 0;}
+        p{color:#888;font-size:14px;margin:0.3em 0;word-break:break-all;}
+        @media (min-width:600px){
+        h2{font-size:5vmin;}
+        p{font-size:2.2vmin;}
+        }
+    </style>
+</head>
 <body>
-<h2>Loading...</h2>
-<p id="targetUrl">Connecting...</p>
+<div class="card">
+    <h2 id="heading">Loading...</h2>
+    <p id="targetUrl"></p>
+</div>
 <script>
-var url = new URLSearchParams(window.location.search).get('url');
-document.getElementById('targetUrl').textContent = url || '';
+    var params=new URLSearchParams(window.location.search);
+    document.getElementById('targetUrl').textContent=params.get('url')||'';
+    if(params.get('state')==='terminal'){
+    document.getElementById('heading').textContent="The page can't be loaded.";
+    }
 </script>
 </body>
 </html>

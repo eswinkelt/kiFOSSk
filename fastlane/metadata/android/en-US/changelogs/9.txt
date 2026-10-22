@@ -1,0 +1,9 @@
+Fix: legacy WebView engines (Android 7-8) now get the system's own error page
+instead of a custom loading screen they can't render; engine detected at
+startup (#2)
+
+Fix: waiting page no longer sits on "Loading..." forever - once a page can't
+be loaded it says so, and it's sized to fit every screen
+
+Also: Settings footer shows app and WebView version (notes legacy engines),
+engine detection consolidated into a single startup census

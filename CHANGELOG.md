@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1.4 — 2026-10
+
+### Added
+
+- **Engine version in Settings.** The settings screen now shows the app version and the detected WebView engine version in a footer, with an explicit note when the engine is classified as legacy (feedback in #2). No more guessing from bug reports whether a device is running an old engine.
+- **WebView census.** Engine detection (version string, legacy/modern classification, legacy threshold at Chromium 72) now lives in one place (`WebViewCensus`) consulted at startup instead of ad-hoc checks scattered through the activity.
+
+### Changed
+
+- **Engine-aware failure routing (Issue #2, completed).** Devices classified as legacy (Chromium below 72, typical Android 7–8 hardware with no WebView updates available) no longer receive the custom waiting page at all. Connection and render errors are delegated to the WebView's own built-in error page, which every engine can display, including engines that cannot render the waiting page itself. Modern engines keep the custom waiting page. Render-failure strikes are not counted on legacy engines, so the circuit breaker can never arm there.
+- **Waiting page is a terminal witness.** When the circuit breaker opens on a modern engine, the waiting page now switches to a terminal state stating the page could not be loaded, instead of presenting "Loading..." forever after the app has already given up (feedback in #2).
+- **Responsive waiting page.** The waiting page now carries a viewport meta tag and a flex-centered layout, so its message stays within the visible area on every screen shape. No more pinch-zooming to read it on tall displays (feedback in #2).
+
+### Fixed
+
+- **Settings build metadata lookup.** Version display uses `PackageManager` instead of generated `BuildConfig`, avoiding AGP 8.x's disabled automatic `BuildConfig` generation.
+
 ## 1.1.3 — 2026-10
 
 ### Fixed

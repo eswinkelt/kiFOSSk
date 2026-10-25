@@ -15,12 +15,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.shinydiscoballsdev.kifossk"
+        applicationId = "de.eswinkelt.kifossk"
         minSdk = 24
         //noinspection EditedTargetSdkVersion
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.1.4"
+        versionCode = 10
+        versionName = "1.1.4-familienboard"
     }
 
     applicationVariants.all {

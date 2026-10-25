@@ -3,12 +3,16 @@ package com.shinydiscoballsdev.kifossk
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.ConnectivityManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Build
 import android.view.GestureDetector
+import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
@@ -16,18 +20,30 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.Button
+import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import android.webkit.WebSettings
-import android.graphics.Bitmap
 
 @SuppressLint("SetJavaScriptEnabled")
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
     private lateinit var gestureDetector: GestureDetector
+    private lateinit var backToBoard: Button
     private var refreshHandler: Handler? = null
     private var refreshRunnable: Runnable? = null
+
+    // Zurück ist im Kiosk erlaubt, solange es WebView-History gibt. Der sichtbare
+    // „Board“-Knopf führt dagegen immer deterministisch zur Startseite zurück.
+    private val backCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            if (this@MainActivity::webView.isInitialized && webView.canGoBack()) {
+                webView.goBack()
+            }
+        }
+    }
 
     // Gesture hardening fields
     private var lastSettingsOpenTime = 0L
@@ -98,12 +114,9 @@ class MainActivity : AppCompatActivity() {
         // Issue #3: respect user's Keep Screen On preference
         applyKeepScreenOnFlag()
 
-        // Block back navigation — kiosk mode
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                // Do nothing — kiosk mode
-            }
-        })
+        // Zurück darf innerhalb der WebView-History arbeiten (Google → Board).
+        // Am Anfang der History bleibt die Geste wirkungslos, damit der Kiosk nicht verlassen wird.
+        onBackPressedDispatcher.addCallback(this, backCallback)
 
         val isFirstRun = KioskPrefs.isFirstRun(this)
 
@@ -147,6 +160,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
+                updateBackButton(url)
 
                 if (url.startsWith("file:") || url.startsWith("about:") || url.startsWith("data:")) return
 
@@ -162,6 +176,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+                updateBackButton(url)
 
                 // Load completed — stand down the watchdog
                 watchdogRunnable?.let { navHandler.removeCallbacks(it) }
@@ -217,6 +232,11 @@ class MainActivity : AppCompatActivity() {
                 setupAutoRefresh()
             }
 
+            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                updateBackButton(url)
+            }
+
             override fun onReceivedError(
                 view: WebView?,
                 request: WebResourceRequest?,
@@ -236,7 +256,44 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-        setContentView(webView)
+        val container = FrameLayout(this)
+        container.addView(
+            webView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        backToBoard = Button(this).apply {
+            text = "‹ Board"
+            isAllCaps = false
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            elevation = 8f * resources.displayMetrics.density
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(Color.argb(230, 22, 24, 32))
+                setStroke(dp(1), Color.argb(120, 255, 255, 255))
+            }
+            visibility = View.GONE
+            setOnClickListener {
+                webView.loadUrl(KioskPrefs.getUrl(this@MainActivity))
+            }
+        }
+        container.addView(
+            backToBoard,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                setMargins(dp(16), dp(16), dp(16), dp(16))
+            }
+        )
+        setContentView(container)
 
         gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
 
@@ -245,12 +302,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onLongPress(e: MotionEvent) {
-                val now = System.currentTimeMillis()
-
-                // Debounce: minimum 10 seconds between setting accesses
-                if (now - lastSettingsOpenTime < SETTINGS_COOLDOWN_MS) return
-                lastSettingsOpenTime = now
-                startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+                requestSettings()
             }
         })
 
@@ -269,6 +321,41 @@ class MainActivity : AppCompatActivity() {
             loadWaitingPage(url)
         }
     }
+
+    // Long-Press öffnet die Einstellungen nur nach Admin-PIN. Beim ersten Mal wird
+    // die PIN festgelegt; danach wird sie abgefragt.
+    private fun requestSettings() {
+        val now = System.currentTimeMillis()
+        if (now - lastSettingsOpenTime < SETTINGS_COOLDOWN_MS) return
+        lastSettingsOpenTime = now
+        if (KioskPrefs.hasAdminPin(this)) {
+            AdminPin.showEnterPin(this) { openSettings() }
+        } else {
+            AdminPin.showSetPin(this) { openSettings() }
+        }
+    }
+
+    private fun openSettings() {
+        startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    // „Board“-Knopf nur auf externen Seiten (Google, Cloudflare-Login, …). Er lädt
+    // die konfigurierte Startseite direkt und ist damit unabhängig von Redirect-History.
+    private fun updateBackButton(url: String?) {
+        if (!this::webView.isInitialized || !this::backToBoard.isInitialized) return
+        backCallback.isEnabled = webView.canGoBack()
+        val external = url != null &&
+            !url.startsWith("file:///android_asset/") &&
+            !url.startsWith("about:") &&
+            baseUrl(url) != baseUrl(KioskPrefs.getUrl(this))
+        backToBoard.visibility = if (external) View.VISIBLE else View.GONE
+    }
+
+    private fun baseUrl(raw: String?): String =
+        (raw ?: "").substringBefore('#').substringBefore('?').trimEnd('/')
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     @Suppress("DEPRECATION")
     private fun hideSystemUI() {

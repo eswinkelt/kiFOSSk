@@ -2,10 +2,13 @@ package com.shinydiscoballsdev.kifossk
 
 import android.content.Context
 import android.content.SharedPreferences
+import java.security.MessageDigest
 
 object KioskPrefs {
     private const val PREFS_NAME = "kiosk_prefs"
     private const val DEFAULT_URL = "http://192.168.50.152:3001"
+    private const val ADMIN_PIN_HASH = "admin_pin_hash"
+    private const val ADMIN_PIN_SALT = "kifossk-admin-v1"
 
     private var prefsInstance: SharedPreferences? = null
 
@@ -65,5 +68,25 @@ object KioskPrefs {
             .putBoolean("auto_refresh_enabled", enabled)
             .putInt("auto_refresh_interval", intervalSeconds)
             .apply()
+    }
+
+    // Admin-PIN für den Long-Press in die Einstellungen. Nur ein Hash wird gespeichert,
+    // damit die PIN nicht im Klartext in den App-Daten steht.
+    fun hasAdminPin(context: Context): Boolean =
+        !getInstance(context).getString(ADMIN_PIN_HASH, null).isNullOrEmpty()
+
+    fun setAdminPin(context: Context, pin: String) {
+        getInstance(context).edit().putString(ADMIN_PIN_HASH, hashPin(pin)).commit()
+    }
+
+    fun checkAdminPin(context: Context, pin: String): Boolean {
+        val stored = getInstance(context).getString(ADMIN_PIN_HASH, null) ?: return false
+        return stored == hashPin(pin)
+    }
+
+    private fun hashPin(pin: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest((ADMIN_PIN_SALT + pin).toByteArray())
+            .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
     }
 }

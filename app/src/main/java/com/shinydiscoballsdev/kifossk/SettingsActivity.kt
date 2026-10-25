@@ -27,6 +27,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var textRefreshIntervalLabel: TextView
     private lateinit var btnSave: Button
     private lateinit var btnSetLauncher: Button
+    private lateinit var btnChangePin: Button
     private lateinit var textLauncherStatus: TextView
     private lateinit var textWebViewVersion: TextView
     private lateinit var textAppVersion: TextView
@@ -64,6 +65,7 @@ class SettingsActivity : AppCompatActivity() {
         textRefreshIntervalLabel = findViewById(R.id.textRefreshIntervalLabel)
         btnSave = findViewById(R.id.buttonSave)
         btnSetLauncher = findViewById(R.id.buttonSetLauncher)
+        btnChangePin = findViewById(R.id.buttonChangePin)
         textLauncherStatus = findViewById(R.id.textLauncherStatus)
         textWebViewVersion = findViewById(R.id.textWebViewVersion)
         textAppVersion = findViewById(R.id.textAppVersion)
@@ -113,6 +115,17 @@ class SettingsActivity : AppCompatActivity() {
         // Set as Launcher button handler
         btnSetLauncher.setOnClickListener {
             setAsLauncher()
+        }
+
+        // Admin-PIN ändern (die Einstellungen sind bereits durch die PIN geschützt)
+        btnChangePin.setOnClickListener {
+            AdminPin.showSetPin(
+                this,
+                title = "Admin-PIN ändern",
+                message = "Neue PIN für den Zugang zu diesen Einstellungen."
+            ) {
+                Toast.makeText(this, "Admin-PIN geändert", Toast.LENGTH_SHORT).show()
+            }
         }
 
         // Save button handler

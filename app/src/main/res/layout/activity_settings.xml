@@ -130,6 +130,14 @@
 			android:backgroundTint="#6d4aff"
 			android:textColor="#ffffff"
 			android:padding="16dp"
+			android:layout_marginBottom="12dp"/>
+
+		<Button
+			android:id="@+id/buttonChangePin"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Admin-PIN ändern"
+			android:minHeight="48dp"
 			android:layout_marginBottom="24dp"/>
 
 		<!-- Save Button -->

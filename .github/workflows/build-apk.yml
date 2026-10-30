@@ -61,12 +61,17 @@ jobs:
           path: kiFOSSk-familienboard-debug.apk
           if-no-files-found: error
 
-      - name: Release „latest“ aktualisieren
+      - name: Release veröffentlichen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view latest >/dev/null 2>&1 || \
-            gh release create latest --title "Familienboard Kiosk (latest)" \
-              --notes "Automatisch gebaut aus ${{ github.sha }}. Signiert mit dem festen Familienboard-Schlüssel." --latest
-          gh release upload latest kiFOSSk-familienboard-release.apk --clobber
-          gh release edit latest --latest
+          TAG="v$VERSION_CODE"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" kiFOSSk-familienboard-release.apk --clobber
+            gh release edit "$TAG" --latest
+          else
+            gh release create "$TAG" kiFOSSk-familienboard-release.apk \
+              --title "Familienboard Kiosk $VERSION_NAME" \
+              --notes "Automatisch gebaut aus ${{ github.sha }}. Signiert mit dem festen Familienboard-Schlüssel." \
+              --latest
+          fi

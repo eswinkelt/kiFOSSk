@@ -5,6 +5,17 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// Signieren: In CI kommen Keystore und Passwörter aus den GitHub-Secrets, lokal optional
+// aus local.properties. Ohne beides wird mit dem Debug-Schlüssel signiert.
+val localProps = Properties()
+rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { localProps.load(it) }
+
+val keystorePath = System.getenv("ANDROID_KEYSTORE_FILE") ?: localProps.getProperty("kifossk_key.storeFile")
+val keystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD") ?: localProps.getProperty("kifossk_key.storePassword", "")
+val keystoreAlias = System.getenv("ANDROID_KEY_ALIAS") ?: localProps.getProperty("kifossk_key.keyAlias", "familienboard")
+val keystoreKeyPassword = System.getenv("ANDROID_KEY_PASSWORD") ?: localProps.getProperty("kifossk_key.keyPassword", keystorePassword)
+val stableSigning = !keystorePath.isNullOrBlank() && keystorePassword.isNotBlank()
+
 android {
     namespace = "com.shinydiscoballsdev.kifossk"
     compileSdk = 35
@@ -19,8 +30,8 @@ android {
         minSdk = 24
         //noinspection EditedTargetSdkVersion
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.1.5-familienboard"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 11
+        versionName = System.getenv("VERSION_NAME") ?: "1.1.5-familienboard"
     }
 
     applicationVariants.all {
@@ -33,27 +44,28 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("../kiFOSSk-new.keystore")
-
-            val localProps = Properties()
-            rootProject.file("local.properties").inputStream().use { input ->
-                localProps.load(input)
+            if (stableSigning) {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = keystoreAlias
+                keyPassword = keystoreKeyPassword
             }
-
-            storePassword = localProps.getProperty("kifossk_key.storePassword", "")
-            keyAlias = localProps.getProperty("kifossk_key.keyAlias", "kifoss_key")
-            keyPassword = localProps.getProperty("kifossk_key.keyPassword", "")
         }
     }
 
     buildTypes {
+        // Auch der Debug-Build bekommt den festen Schlüssel, damit Updates in-place gehen
+        // und das Wandtablet per run-as gewartet werden kann.
+        debug {
+            signingConfig = signingConfigs.getByName(if (stableSigning) "release" else "debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName(if (stableSigning) "release" else "debug")
         }
     }
 

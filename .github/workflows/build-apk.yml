@@ -11,6 +11,9 @@ on:
       - ".github/workflows/build-apk.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -26,13 +29,41 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Build debug APK
+      - name: Signaturschlüssel bereitstellen
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64" || { echo "Secret ANDROID_KEYSTORE_BASE64 fehlt"; exit 1; }
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/kifossk.jks"
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/kifossk.jks" >> "$GITHUB_ENV"
+
+      - name: APK bauen
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number + 100 }}
+          VERSION_NAME: 1.1.5-familienboard.${{ github.run_number }}
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          gradle assembleDebug --no-daemon
+          gradle assembleDebug assembleRelease --no-daemon
+          cp app/build/outputs/apk/debug/*.apk kiFOSSk-familienboard-debug.apk
+          cp app/build/outputs/apk/release/*.apk kiFOSSk-familienboard-release.apk
+          ls -l kiFOSSk-familienboard-*.apk
 
-      - uses: actions/upload-artifact@v4
+      - name: Debug-APK für ADB
+        uses: actions/upload-artifact@v4
         with:
           name: kifossk-familienboard-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: kiFOSSk-familienboard-debug.apk
           if-no-files-found: error
+
+      - name: Release „latest“ aktualisieren
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view latest >/dev/null 2>&1 || \
+            gh release create latest --title "Familienboard Kiosk (latest)" \
+              --notes "Automatisch gebaut aus ${{ github.sha }}. Signiert mit dem festen Familienboard-Schlüssel." --latest
+          gh release upload latest kiFOSSk-familienboard-release.apk --clobber
+          gh release edit latest --latest

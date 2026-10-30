@@ -37,13 +37,16 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/kifossk.jks"
           echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/kifossk.jks" >> "$GITHUB_ENV"
 
+      - name: Version bestimmen
+        run: |
+          echo "VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=1.1.5-familienboard.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
       - name: APK bauen
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          VERSION_CODE: ${{ github.run_number + 100 }}
-          VERSION_NAME: 1.1.5-familienboard.${{ github.run_number }}
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           gradle assembleDebug assembleRelease --no-daemon

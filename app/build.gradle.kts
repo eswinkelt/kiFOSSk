@@ -19,8 +19,8 @@ android {
         minSdk = 24
         //noinspection EditedTargetSdkVersion
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.1.4-familienboard"
+        versionCode = 11
+        versionName = "1.1.5-familienboard"
     }
 
     applicationVariants.all {

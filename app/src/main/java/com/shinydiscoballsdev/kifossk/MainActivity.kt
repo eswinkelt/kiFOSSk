@@ -16,6 +16,11 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.webkit.PermissionRequest
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -32,6 +37,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private lateinit var gestureDetector: GestureDetector
     private lateinit var backToBoard: Button
+    // Mikrofon-Anfrage des Boards, die auf die Android-Berechtigung wartet
+    private var pendingMicRequest: PermissionRequest? = null
     private var refreshHandler: Handler? = null
     private var refreshRunnable: Runnable? = null
 
@@ -54,6 +61,7 @@ class MainActivity : AppCompatActivity() {
     private var watchdogRunnable: Runnable? = null
     private var reprobeRunnable: Runnable? = null
     companion object {
+        private const val REQUEST_MIC = 42
         private const val PAGE_LOAD_TIMEOUT_MS = 20_000L
         private const val REPROBE_DELAY_MS = 5_000L
         private const val BREAKER_OPEN_THRESHOLD = 3
@@ -155,6 +163,31 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_NO_CACHE
         }
         webView.setOnLongClickListener { true }
+
+        // Mikrofon nur für die eingestellte Board-Adresse (Spracheingabe im Familienboard).
+        // Fremde Seiten wie Rezepte oder Google bekommen keinen Zugriff.
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onPermissionRequest(request: PermissionRequest) {
+                runOnUiThread {
+                    val wantsMic = request.resources.contains(PermissionRequest.RESOURCE_AUDIO_CAPTURE)
+                    when {
+                        !wantsMic || !isBoardOrigin(request.origin) -> request.deny()
+                        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED ->
+                            request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+                        else -> {
+                            // Erst die Android-Berechtigung einholen, dann die WebView-Anfrage beantworten
+                            pendingMicRequest?.deny()
+                            pendingMicRequest = request
+                            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_MIC)
+                        }
+                    }
+                }
+            }
+
+            override fun onPermissionRequestCanceled(request: PermissionRequest) {
+                if (pendingMicRequest == request) pendingMicRequest = null
+            }
+        }
 
         webView.webViewClient = object : WebViewClient() {
 
@@ -542,6 +575,35 @@ class MainActivity : AppCompatActivity() {
             NetworkRetryHelper.startHostRetry(targetUrl) { url: String -> webView.loadUrl(url) }
         } else {
             NetworkRetryHelper.startWaitingForNetwork(this, targetUrl) { url: String -> webView.loadUrl(url) }
+        }
+    }
+
+    /** Nur die eingestellte Board-Adresse darf das Mikrofon anfordern (Schema, Host und Port). */
+    private fun isBoardOrigin(origin: Uri): Boolean {
+        val board = Uri.parse(KioskPrefs.getUrl(this))
+        val host = origin.host ?: return false
+        val boardHost = board.host ?: return false
+        fun port(uri: Uri): Int = when {
+            uri.port != -1 -> uri.port
+            uri.scheme == "https" -> 443
+            uri.scheme == "http" -> 80
+            else -> -1
+        }
+        return origin.scheme == board.scheme &&
+            host.equals(boardHost, ignoreCase = true) &&
+            port(origin) == port(board)
+    }
+
+    @Deprecated("Activity Result API wäre moderner, reicht hier aber")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_MIC) return
+        val request = pendingMicRequest ?: return
+        pendingMicRequest = null
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+            request.grant(arrayOf(PermissionRequest.RESOURCE_AUDIO_CAPTURE))
+        } else {
+            request.deny()
         }
     }
 }

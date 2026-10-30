@@ -6,7 +6,7 @@ import java.security.MessageDigest
 
 object KioskPrefs {
     private const val PREFS_NAME = "kiosk_prefs"
-    private const val DEFAULT_URL = "http://192.168.50.152:3001"
+    private const val DEFAULT_URL = "https://board.eswinkelt.de:8443/"
     private const val ADMIN_PIN_HASH = "admin_pin_hash"
     private const val ADMIN_PIN_SALT = "kifossk-admin-v1"
 

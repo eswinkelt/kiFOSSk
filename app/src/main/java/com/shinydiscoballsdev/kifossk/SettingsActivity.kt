@@ -20,6 +20,7 @@ import androidx.activity.OnBackPressedCallback
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var editTextUrl: EditText
+    private lateinit var editTextFallbackUrl: EditText
     private lateinit var switchScreenOn: SwitchCompat
     private lateinit var spinnerOrientation: Spinner
     private lateinit var switchAutoRefresh: SwitchCompat
@@ -58,6 +59,7 @@ class SettingsActivity : AppCompatActivity() {
         editTextUrl.post {
             editTextUrl.clearFocus()
         }
+        editTextFallbackUrl = findViewById(R.id.editTextFallbackUrl)
         switchScreenOn = findViewById(R.id.switchScreenOn)
         spinnerOrientation = findViewById(R.id.spinnerOrientation)
         switchAutoRefresh = findViewById(R.id.switchAutoRefresh)
@@ -72,6 +74,7 @@ class SettingsActivity : AppCompatActivity() {
 
         // Load existing preferences
         editTextUrl.setText(KioskPrefs.getUrl(this))
+        editTextFallbackUrl.setText(KioskPrefs.getFallbackUrlSetting(this))
         switchScreenOn.isChecked = KioskPrefs.getScreenOn(this)
 
         // Issue #3: apply initial flag state, and follow the switch live
@@ -169,6 +172,7 @@ class SettingsActivity : AppCompatActivity() {
     private fun setAsLauncher() {
         // Save current settings before leaving (defensive)
         KioskPrefs.setUrl(this, editTextUrl.text.toString())
+        KioskPrefs.setFallbackUrl(this, editTextFallbackUrl.text.toString())
         KioskPrefs.setScreenOn(this, switchScreenOn.isChecked)
         val intervalValues = intArrayOf(10, 30, 60, 300, 900)
         KioskPrefs.setAutoRefresh(this, switchAutoRefresh.isChecked, intervalValues[spinnerRefreshInterval.selectedItemPosition])
@@ -263,6 +267,7 @@ class SettingsActivity : AppCompatActivity() {
         super.onPause()
         // Save preferences when activity loses focus (defensive backup)
         KioskPrefs.setUrl(this, editTextUrl.text.toString())
+        KioskPrefs.setFallbackUrl(this, editTextFallbackUrl.text.toString())
         KioskPrefs.setScreenOn(this, switchScreenOn.isChecked)
         val orientationMap = mapOf(0 to "landscape", 1 to "portrait", 2 to "auto")
         KioskPrefs.setOrientation(this, orientationMap[spinnerOrientation.selectedItemPosition]!!)
@@ -272,6 +277,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun saveAndReturn() {
         KioskPrefs.setUrl(this, editTextUrl.text.toString())
+        KioskPrefs.setFallbackUrl(this, editTextFallbackUrl.text.toString())
         KioskPrefs.setScreenOn(this, switchScreenOn.isChecked)
 
         val orientationMap = mapOf(0 to "landscape", 1 to "portrait", 2 to "auto")

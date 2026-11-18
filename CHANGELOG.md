@@ -1,5 +1,11 @@
 # Changelog
 
+## Familienboard — 2026-11
+
+### Added
+
+- **DNS-Fallback auf eine feste Board-Adresse.** Die App prüft alle 30 Sekunden, ob der Name der Board-URL auflöst. Scheitert das zweimal hintereinander und antwortet die Fallback-URL (Standard `http://192.168.178.94:8080/`, in den Einstellungen änderbar, leer = aus), lädt sie das Board über diese Adresse. Sobald der Name wieder auflöst, geht sie zurück auf die eingestellte URL. Hintergrund: MagicOS (Honor) ersetzt nach DNS-Aussetzern den DNS aus DHCP still durch öffentliche Server, und der Service Worker des Boards verdeckt den Fehler, sodass die WebView nichts meldet. Über die Fallback-Adresse fehlt HTTPS und damit das Mikrofon.
+
 ## 1.1.4 — 2026-10
 
 ### Added

@@ -30,6 +30,8 @@ import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import android.webkit.WebSettings
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 @SuppressLint("SetJavaScriptEnabled")
 class MainActivity : AppCompatActivity() {
@@ -83,6 +85,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private var breakerResetRunnable: Runnable? = null
+
+    // DNS-Fallback (siehe BoardFailover): läuft das Board gerade über die Ersatzadresse?
+    private var usingFallback = false
+    private var dnsFails = 0
+    private var failoverRunnable: Runnable? = null
+    private val failoverExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
     // debounce — onReceivedError, empty-body probe, and watchdog can all
     // fire for one failure event; one fallback per event, no stacked loops
@@ -202,7 +210,7 @@ class MainActivity : AppCompatActivity() {
 
                 watchdogRunnable = Runnable {
                     android.util.Log.i("KioskLoad", "WATCHDOG: no page completion for $url after ${PAGE_LOAD_TIMEOUT_MS / 1000}s — observing, not intervening (v1.0.3 patience parity)")
-                    currentUrl = KioskPrefs.getUrl(this@MainActivity)
+                    currentUrl = boardUrl()
                 }.also { navHandler.postDelayed(it, PAGE_LOAD_TIMEOUT_MS) }
             }
 
@@ -284,7 +292,7 @@ class MainActivity : AppCompatActivity() {
                 // only main-frame failures trigger the waiting page;
                 // subresource 404s must not hijack the kiosk
                 if (request?.isForMainFrame == true) {
-                    currentUrl = KioskPrefs.getUrl(this@MainActivity)
+                    currentUrl = boardUrl()
                     registerRenderStrike("onReceivedError")
                 }
             }
@@ -313,7 +321,7 @@ class MainActivity : AppCompatActivity() {
             }
             visibility = View.GONE
             setOnClickListener {
-                webView.loadUrl(KioskPrefs.getUrl(this@MainActivity))
+                webView.loadUrl(boardUrl())
             }
         }
         container.addView(
@@ -353,6 +361,58 @@ class MainActivity : AppCompatActivity() {
         } else {
             loadWaitingPage(url)
         }
+
+        scheduleFailoverCheck(BoardFailover.FIRST_CHECK_DELAY_MS)
+    }
+
+    /** Aktive Board-Adresse: die eingestellte URL oder, bei DNS-Ausfall, die Ersatzadresse. */
+    private fun boardUrl(): String {
+        val fallback = KioskPrefs.getFallbackUrl(this)
+        return if (usingFallback && fallback != null) fallback else KioskPrefs.getUrl(this)
+    }
+
+    private fun scheduleFailoverCheck(delayMs: Long) {
+        failoverRunnable?.let { navHandler.removeCallbacks(it) }
+        failoverRunnable = Runnable { runFailoverCheck() }.also { navHandler.postDelayed(it, delayMs) }
+    }
+
+    // Prüft im Hintergrund, ob der Name der Board-URL auflöst, und schaltet nur Board-Seiten
+    // zwischen eingestellter URL und Ersatzadresse um. Fremde Seiten (Google, Rezepte) bleiben.
+    private fun runFailoverCheck() {
+        val fallback = KioskPrefs.getFallbackUrl(this) ?: return
+        val primary = KioskPrefs.getUrl(this)
+        val host = Uri.parse(primary).host ?: return
+        if (!BoardFailover.isBoardPage(webView.url, primary, fallback)) {
+            scheduleFailoverCheck(BoardFailover.CHECK_INTERVAL_MS)
+            return
+        }
+        val wasOnFallback = usingFallback
+        failoverExecutor.execute {
+            val resolves = BoardFailover.resolves(host)
+            val reachable = !resolves && !wasOnFallback && BoardFailover.reachable(fallback)
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                dnsFails = if (resolves) 0 else dnsFails + 1
+                when (BoardFailover.decide(resolves, reachable, usingFallback, dnsFails)) {
+                    BoardFailover.Action.USE_FALLBACK -> {
+                        android.util.Log.w("KioskFailover", "$host löst nicht auf ($dnsFails×), wechsle auf $fallback")
+                        usingFallback = true
+                        consecutiveRenderFailures = 0
+                        currentUrl = fallback
+                        webView.loadUrl(fallback)
+                    }
+                    BoardFailover.Action.USE_PRIMARY -> {
+                        android.util.Log.i("KioskFailover", "$host löst wieder auf, zurück auf $primary")
+                        usingFallback = false
+                        consecutiveRenderFailures = 0
+                        currentUrl = primary
+                        webView.loadUrl(primary)
+                    }
+                    BoardFailover.Action.NONE -> Unit
+                }
+                scheduleFailoverCheck(BoardFailover.CHECK_INTERVAL_MS)
+            }
+        }
     }
 
     // Long-Press öffnet die Einstellungen nur nach Admin-PIN. Beim ersten Mal wird
@@ -380,7 +440,8 @@ class MainActivity : AppCompatActivity() {
         val external = url != null &&
             !url.startsWith("file:///android_asset/") &&
             !url.startsWith("about:") &&
-            baseUrl(url) != baseUrl(KioskPrefs.getUrl(this))
+            baseUrl(url) != baseUrl(KioskPrefs.getUrl(this)) &&
+            baseUrl(url) != baseUrl(KioskPrefs.getFallbackUrl(this))
         backToBoard.visibility = if (external) View.VISIBLE else View.GONE
     }
 
@@ -420,7 +481,7 @@ class MainActivity : AppCompatActivity() {
                 if (KioskPrefs.isAutoRefreshEnabled(this@MainActivity) &&
                     consecutiveRenderFailures < 3) {
                     // Read URL fresh each tick — no stale captured copies
-                    currentUrl = KioskPrefs.getUrl(this@MainActivity)
+                    currentUrl = boardUrl()
                     webView.loadUrl(currentUrl)
                     refreshHandler?.postDelayed(this, intervalMs)  // simple self-reschedule
                 }
@@ -466,6 +527,7 @@ class MainActivity : AppCompatActivity() {
         navHandler.removeCallbacksAndMessages(null)
         NetworkRetryHelper.stopWaiting()
         NetworkRetryHelper.stopHostRetry()
+        failoverExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -514,7 +576,7 @@ class MainActivity : AppCompatActivity() {
                 android.util.Log.i("KioskLoad",
                     "breaker cooldown elapsed — resetting counter (was $consecutiveRenderFailures), one re-attempt")
                 consecutiveRenderFailures = 0
-                currentUrl = KioskPrefs.getUrl(this)
+                currentUrl = boardUrl()
                 webView.loadUrl(currentUrl)
             }
         }.also { navHandler.postDelayed(it, BREAKER_COOLDOWN_MS) }

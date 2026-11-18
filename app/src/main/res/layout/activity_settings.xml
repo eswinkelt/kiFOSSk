@@ -42,6 +42,25 @@
 			android:autofillHints="url"
 			android:minHeight="48dp"/>
 
+		<!-- Fallback URL, wenn der Name der Dashboard URL nicht auflöst -->
+		<TextView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:text="Fallback URL (wenn der Name nicht auflöst, leer = aus)"
+			android:textSize="16sp"
+			android:textColor="?android:attr/textColorSecondary"
+			android:layout_marginTop="16dp"
+			android:layout_marginBottom="8dp"/>
+
+		<EditText
+			android:id="@+id/editTextFallbackUrl"
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:hint="http://192.168.178.94:8080/"
+			android:inputType="textUri"
+			android:importantForAutofill="no"
+			android:minHeight="48dp"/>
+
 		<!-- Keep Screen On -->
 		<TextView
 			android:layout_width="match_parent"

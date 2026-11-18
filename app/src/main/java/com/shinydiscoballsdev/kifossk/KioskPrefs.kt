@@ -7,6 +7,7 @@ import java.security.MessageDigest
 object KioskPrefs {
     private const val PREFS_NAME = "kiosk_prefs"
     private const val DEFAULT_URL = "https://board.eswinkelt.de:8443/"
+    private const val DEFAULT_FALLBACK_URL = "http://192.168.178.94:8080/"
     private const val ADMIN_PIN_HASH = "admin_pin_hash"
     private const val ADMIN_PIN_SALT = "kifossk-admin-v1"
 
@@ -29,6 +30,18 @@ object KioskPrefs {
 
     fun setUrl(context: Context, url: String) {
         getInstance(context).edit().putString("web_url", url).commit()
+    }
+
+    // Ersatzadresse, wenn der Name der Board-URL nicht auflöst (siehe BoardFailover).
+    // Ohne gespeicherten Wert gilt die IP des Familienboards; ein leerer Wert schaltet den Fallback ab.
+    fun getFallbackUrlSetting(context: Context): String =
+        getInstance(context).getString("fallback_url", null) ?: DEFAULT_FALLBACK_URL
+
+    fun getFallbackUrl(context: Context): String? =
+        getFallbackUrlSetting(context).trim().takeIf { UrlValidator.isValid(it) }
+
+    fun setFallbackUrl(context: Context, url: String) {
+        getInstance(context).edit().putString("fallback_url", url.trim()).commit()
     }
 
     fun isFirstRun(context: Context): Boolean {
